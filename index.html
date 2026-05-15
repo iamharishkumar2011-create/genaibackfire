@@ -4,15 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AI Writing Assistant</title>
-  
-  <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
-  
-  <!-- React and ReactDOM -->
   <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
-  
-  <!-- Babel -->
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 </head>
 <body class="bg-gray-50">
@@ -21,31 +15,51 @@
   <script type="text/babel">
     const { useState, useEffect } = React;
 
-    // ── HELPERS ──────────────────────────────────────────────────────────────────
-    // API key is now entered at runtime via the UI (OpenRouter key)
+    // ── CONFIG ─────────────────────────────────────────────────────────────────
     let API_KEY = "";
 
+    const STORY_PREMISE = "A stranger knocks on your door at midnight holding an object you lost years ago.";
+
+    const GENRE_OPTIONS = [
+      "Suspenseful thriller",
+      "Heartwarming drama",
+      "Dark comedy",
+      "Magical realism"
+    ];
+
+    const EMOTION_OPTIONS = [
+      { label: "Fear → Relief", desc: "Start with dread, end with comfort" },
+      { label: "Curiosity → Wonder", desc: "Start with intrigue, end with awe" },
+      { label: "Sadness → Hope", desc: "Start with loss, end with possibility" },
+      { label: "Anger → Understanding", desc: "Start with frustration, end with empathy" }
+    ];
+
+    // ── API ────────────────────────────────────────────────────────────────────
     async function callLLM(messages, temperature = 0.7) {
-      const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${API_KEY}`
+          "Authorization": `Bearer ${API_KEY}`,
+          "HTTP-Referer": window.location.href,
+          "X-Title": "AI Writing Assistant"
         },
         body: JSON.stringify({
-          model: "anthropic/claude-sonnet-4-20250514",
-          messages: messages,
-          temperature: temperature,
+          model: "anthropic/claude-sonnet-4",
+          messages,
+          temperature
         })
       });
-      if (!response.ok) {
-        throw new Error("API Request Failed");
+      if (!res.ok) {
+        const err = await res.text();
+        console.error("API Error:", res.status, err);
+        throw new Error(`API ${res.status}`);
       }
-      const data = await response.json();
+      const data = await res.json();
       return data.choices[0].message.content;
     }
 
-    // ── UI COMPONENTS ────────────────────────────────────────────────────────────
+    // ── UI PRIMITIVES ──────────────────────────────────────────────────────────
     function ProgressBar({ step, total }) {
       const pct = Math.round((step / total) * 100);
       return (
@@ -71,55 +85,92 @@
       return <button onClick={onClick} disabled={disabled} className={base + style}>{children}</button>;
     }
 
-    const Shell = ({ children, step, total = 3 }) => (
+    const Shell = ({ children, step, total }) => (
       <div className="min-h-screen bg-gray-50 flex justify-center pt-10 pb-16 px-4">
-        <div className="w-full" style={{ maxWidth: 600 }}>
+        <div className="w-full" style={{ maxWidth: 620 }}>
           {step > 0 && <ProgressBar step={step} total={total} />}
           {children}
         </div>
       </div>
     );
 
-    // ── MAIN ─────────────────────────────────────────────────────────────────────
+    const Card = ({ children, className = "" }) => (
+      <div className={`bg-white border border-gray-200 rounded-lg p-5 shadow-sm ${className}`}>{children}</div>
+    );
+
+    function SelectableCard({ selected, onClick, children }) {
+      return (
+        <div
+          onClick={onClick}
+          className={`border rounded-lg p-4 cursor-pointer transition-all duration-150 ${
+            selected ? 'border-gray-800 bg-gray-50 shadow-inner ring-1 ring-gray-300' : 'border-gray-200 bg-white hover:border-gray-300 shadow-sm'
+          }`}
+        >
+          {children}
+        </div>
+      );
+    }
+
+    // ── LOADING SCREEN ─────────────────────────────────────────────────────────
+    function LoadingScreen({ msg }) {
+      return (
+        <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+          <div className="text-center">
+            <div className="w-8 h-8 rounded-full border-2 border-gray-200 border-t-gray-800 animate-spin mx-auto mb-4" />
+            <p className="text-sm font-medium text-gray-600">{msg}</p>
+          </div>
+        </div>
+      );
+    }
+
+    // ── MAIN APP ───────────────────────────────────────────────────────────────
     function Study1Platform() {
       const [phase, setPhase] = useState('welcome');
       const [cond, setCond] = useState(null);
-      
+
+      // Auth
       const [apiKey, setApiKey] = useState('');
       const [keyFromUrl, setKeyFromUrl] = useState(false);
-      const [prompt, setPrompt] = useState('');
-      const [baselineStory, setBaselineStory] = useState('');
-      const [options, setOptions] = useState([]);
-      const [selectedOption, setSelectedOption] = useState(null);
-      const [finalStory, setFinalStory] = useState('');
-      const [loadingMsg, setLoadingMsg] = useState('');
 
+      // Common
+      const [prompt, setPrompt] = useState('');
+      const [loadingMsg, setLoadingMsg] = useState('');
+      const [finalStory, setFinalStory] = useState('');
+
+      // High engagement — Step 1: Problem ID
+      const [genre, setGenre] = useState('');
+      const [conflict, setConflict] = useState('');
+      const [emotionArc, setEmotionArc] = useState('');
+
+      // High engagement — Step 2: Info Search
+      const [characters, setCharacters] = useState([]);
+      const [settings, setSettings] = useState([]);
+      const [plotDevices, setPlotDevices] = useState([]);
+      const [selCharacter, setSelCharacter] = useState('');
+      const [selSetting, setSelSetting] = useState('');
+      const [selPlotDevice, setSelPlotDevice] = useState('');
+
+      // High engagement — Step 3: Idea Gen
+      const [creativeDirection, setCreativeDirection] = useState('');
+
+      // ── INIT ──────────────────────────────────────────────────────────────────
       useEffect(() => {
         const params = new URLSearchParams(window.location.search);
-
-        // Read API key from URL: ?key=sk-proj-...
         const urlKey = params.get('key') || '';
-        if (urlKey) {
-          setApiKey(urlKey);
-          setKeyFromUrl(true);
-          API_KEY = urlKey;
-        }
+        if (urlKey) { setApiKey(urlKey); setKeyFromUrl(true); API_KEY = urlKey; }
 
-        // Allow forcing condition via URL: ?cond=hh (high quality, high engage)
-        // hh = High/High, hl = High/Low, mh = Low/High, ml = Low/Low
         const condParam = params.get('cond');
         if (condParam && condParam.length === 2) {
-          const q = condParam[0]; // 'h' or 'm'
-          const e = condParam[1] === 'h' ? 'high' : 'low';
-          setCond({ q, e });
+          setCond({ q: condParam[0], e: condParam[1] === 'h' ? 'high' : 'low' });
         } else {
-          // Randomize 2x2: Quality (h/m) x Engagement (high/low)
-          const q = Math.random() < 0.5 ? 'h' : 'm';
-          const e = Math.random() < 0.5 ? 'high' : 'low';
-          setCond({ q, e });
+          setCond({
+            q: Math.random() < 0.5 ? 'h' : 'm',
+            e: Math.random() < 0.5 ? 'high' : 'low'
+          });
         }
       }, []);
 
+      // ── QUALITY PROMPTS ───────────────────────────────────────────────────────
       const getSystemPrompt = () => {
         if (cond.q === 'h') {
           return `You are an award-winning literary fiction author. Your writing MUST demonstrate:
@@ -131,208 +182,319 @@
 - A distinctive, compelling narrative voice
 - Strong opening hooks and resonant endings
 Write prose that would be published in a top literary magazine.`;
-        } else {
-          return `You are a below-average writer with limited skill. Your writing MUST demonstrate:
+        }
+        return `You are a below-average writer with limited skill. Your writing MUST demonstrate:
 - Only literal, surface-level descriptions with no figurative language
 - Repetitive sentence patterns: almost every sentence should start with "He" or "She" or "It" or "The"
 - Tell emotions directly: say "He was sad" or "She felt happy" instead of showing
-- Use common clichés freely: "it was a dark and stormy night", "her heart skipped a beat", etc.
+- Use common clichés freely
 - No sensory details beyond basic sight
 - Simple vocabulary only — no words above a 6th grade reading level
 - Flat, predictable pacing with no variation in rhythm
 Write prose that feels like an amateur's first draft.`;
-        }
       };
 
-      // Use different temperatures: higher for creative high-quality, lower for flat low-quality
-      const getTemperature = () => cond.q === 'h' ? 0.9 : 0.3;
+      const getTemp = () => cond.q === 'h' ? 0.9 : 0.3;
 
+      // ── LOW ENGAGEMENT: ONE-SHOT ──────────────────────────────────────────────
       const handleGenerateLow = async () => {
         setPhase('loading');
-        setLoadingMsg('Generating your story...');
+        setLoadingMsg('Generating your story…');
         try {
-          const messages = [
+          const story = await callLLM([
             { role: "system", content: getSystemPrompt() },
-            { role: "user", content: `Write a short story based on this idea: ${prompt}. Keep it around 200-300 words.` }
-          ];
-          const story = await callLLM(messages, getTemperature());
+            { role: "user", content: `Story premise: "${STORY_PREMISE}"\n\nParticipant's elaboration: "${prompt}"\n\nWrite a short story (250-300 words) based on the premise and the participant's elaboration.` }
+          ], getTemp());
           setFinalStory(story);
           setPhase('story');
-        } catch (err) {
-          alert("Error generating story. Please check your API key.");
-          setPhase('task_low');
+        } catch (e) {
+          alert("Error: " + e.message);
+          setPhase('prompt');
         }
       };
 
-      const handleGenerateHighBase = async () => {
+      // ── HIGH ENGAGEMENT: STEP 2 — GENERATE ELEMENTS ──────────────────────────
+      const handleGenerateElements = async () => {
         setPhase('loading');
-        setLoadingMsg('Drafting a baseline story...');
+        setLoadingMsg('Generating story building blocks…');
         try {
-          // 1. Generate baseline
-          const baseMsgs = [
-            { role: "system", content: getSystemPrompt() },
-            { role: "user", content: `Write a short baseline draft of a story based on this idea: ${prompt}. Keep it around 150 words.` }
-          ];
-          const baseline = await callLLM(baseMsgs, getTemperature());
-          setBaselineStory(baseline);
+          const context = `Premise: "${STORY_PREMISE}"\nElaboration: "${prompt}"\nGenre: ${genre}\nConflict: ${conflict}\nEmotional Arc: ${emotionArc}`;
 
-          // 2. Generate 3 options for direction
-          setLoadingMsg('Generating creative directions...');
-          const optMsgs = [
-            { role: "system", content: "You are an assistant helping a writer brainstorm. Give exactly 3 distinct, creative directions or twists to take this story. Format as a simple numbered list (1., 2., 3.). Do not include introductory text." },
-            { role: "user", content: `Here is the baseline story: "${baseline}". Give me 3 creative ways to develop or change this story.` }
-          ];
-          const optsText = await callLLM(optMsgs);
-          const parsedOpts = optsText.split(/\n/).filter(l => l.trim().match(/^\d/)).map(l => l.replace(/^\d+\.\s*/, '').trim());
-          setOptions(parsedOpts.slice(0, 3));
-          
-          setPhase('engage_choice');
-        } catch (err) {
-          alert("Error generating baseline. Please check your API key.");
-          setPhase('task_high');
+          const elemPrompt = `Based on this story context:\n${context}\n\nGenerate exactly 3 options for EACH of these 3 categories. Format your response as valid JSON with this exact structure (no markdown, no code fences, just pure JSON):\n{"characters":["option1","option2","option3"],"settings":["option1","option2","option3"],"plotDevices":["option1","option2","option3"]}\n\nEach option should be 1-2 sentences. Characters should be vivid character sketches. Settings should be atmospheric place/time descriptions. Plot devices should be specific narrative mechanisms or twists.`;
+
+          const raw = await callLLM([
+            { role: "system", content: "You are a creative writing assistant. Always respond with valid JSON only. No markdown, no explanation, no code fences." },
+            { role: "user", content: elemPrompt }
+          ], 0.8);
+
+          // Parse JSON — strip any markdown fences if present
+          const cleaned = raw.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+          const parsed = JSON.parse(cleaned);
+          setCharacters(parsed.characters || []);
+          setSettings(parsed.settings || []);
+          setPlotDevices(parsed.plotDevices || []);
+          setPhase('step2_search');
+        } catch (e) {
+          console.error("Element generation error:", e);
+          alert("Error generating story elements. Retrying may help.");
+          setPhase('step1_problem');
         }
       };
 
-      const handleGenerateHighFinal = async () => {
+      // ── HIGH ENGAGEMENT: FINAL STORY ──────────────────────────────────────────
+      const handleGenerateFinal = async () => {
         setPhase('loading');
-        setLoadingMsg('Writing final story incorporating your choice...');
+        setLoadingMsg('Crafting your story from all your creative inputs…');
         try {
-          const finalMsgs = [
+          const fullContext = `Story premise: "${STORY_PREMISE}"
+Participant's elaboration: "${prompt}"
+Genre/Tone: ${genre}
+Core Conflict: ${conflict}
+Emotional Arc: ${emotionArc}
+Character: ${selCharacter}
+Setting: ${selSetting}
+Plot Device: ${selPlotDevice}
+Creative Direction: ${creativeDirection}`;
+
+          const story = await callLLM([
             { role: "system", content: getSystemPrompt() },
-            { role: "user", content: `Here is a baseline story: "${baselineStory}". Please rewrite and expand this story (to around 250-300 words) by incorporating this specific creative direction: "${selectedOption}". Make sure it flows naturally.` }
-          ];
-          const final = await callLLM(finalMsgs, getTemperature());
-          setFinalStory(final);
+            { role: "user", content: `${fullContext}\n\nWrite a short story (250-300 words) that integrates ALL of the above elements naturally. The story must reflect the chosen genre, follow the emotional arc, feature the selected character in the selected setting, use the plot device, and incorporate the participant's creative direction.` }
+          ], getTemp());
+          setFinalStory(story);
           setPhase('story');
-        } catch (err) {
-          alert("Error generating final story. Please check your API key.");
-          setPhase('engage_choice');
+        } catch (e) {
+          alert("Error: " + e.message);
+          setPhase('step3_ideagen');
         }
       };
 
       if (!cond) return null;
+      const isHigh = cond.e === 'high';
+      const totalSteps = isHigh ? 5 : 2;
 
-      // ── WELCOME ─────────────────────────────────────────────────────────────────
-      const handleStart = () => {
-        API_KEY = apiKey;
-        setPhase(cond.e === 'high' ? 'task_high' : 'task_low');
-      };
-
+      // ════════════════════════════════════════════════════════════════════════
+      // PHASE: WELCOME
+      // ════════════════════════════════════════════════════════════════════════
       if (phase === 'welcome') return (
-        <Shell step={0} total={3}>
+        <Shell step={0} total={totalSteps}>
           <h1 className="text-2xl font-semibold text-gray-900 mb-3">AI Writing Assistant</h1>
-
           <p className="text-sm text-gray-600 mb-6 leading-relaxed">
-            Welcome! You will use our AI tool to collaboratively write a short story. Please follow the instructions on the next screen.
+            Welcome! You will use our AI tool to collaboratively write a short story.
+            You'll be given a story premise to work with. Please follow the instructions on each screen.
           </p>
-
-          {/* Only show key input if key was NOT provided via URL */}
           {!keyFromUrl && (
-            <div className="bg-white border border-gray-200 rounded-lg p-5 mb-6 shadow-sm">
+            <Card className="mb-6">
               <p className="text-sm font-medium text-gray-800 mb-2">Researcher: Enter API Key</p>
-              <input
-                type="password"
-                className="w-full border border-gray-200 rounded-lg p-3 text-sm text-gray-800 outline-none focus:ring-1 focus:ring-gray-400 bg-white"
-                placeholder="sk-or-v1-..."
-                value={apiKey}
-                onChange={e => setApiKey(e.target.value)}
-              />
-              <p className="text-xs text-gray-400 mt-1">Paste your OpenRouter key for testing.</p>
-            </div>
+              <input type="password" className="w-full border border-gray-200 rounded-lg p-3 text-sm outline-none focus:ring-1 focus:ring-gray-400 bg-white" placeholder="sk-or-v1-..." value={apiKey} onChange={e => setApiKey(e.target.value)} />
+            </Card>
           )}
-
-          <Btn onClick={handleStart} disabled={apiKey.length < 10}>Start Task →</Btn>
+          <Btn onClick={() => { API_KEY = apiKey; setPhase('prompt'); }} disabled={apiKey.length < 10}>Start Task →</Btn>
         </Shell>
       );
 
-      // ── LOW ENGAGEMENT TASK ─────────────────────────────────────────────────────
-      if (phase === 'task_low') return (
-        <Shell step={1} total={2}>
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">Your Writing Task</h2>
-          <p className="text-sm text-gray-600 mb-6">Simply describe what you would like the story to be about, then submit your request.</p>
+      // ════════════════════════════════════════════════════════════════════════
+      // PHASE: PROMPT (COMMON — both conditions see this identical page)
+      // ════════════════════════════════════════════════════════════════════════
+      if (phase === 'prompt') return (
+        <Shell step={1} total={totalSteps}>
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">Your Story Premise</h2>
+          <Card className="mb-6">
+            <p className="text-sm text-gray-500 uppercase tracking-wide mb-2 font-medium">Premise</p>
+            <p className="text-base text-gray-900 leading-relaxed italic">"{STORY_PREMISE}"</p>
+          </Card>
+          <p className="text-sm text-gray-600 mb-3">Describe how you'd like to develop this into a short story:</p>
           <textarea
             rows={4}
             className="w-full border border-gray-200 rounded-lg p-4 text-sm text-gray-800 resize-none outline-none focus:ring-1 focus:ring-gray-400 shadow-sm bg-white"
-            placeholder="Describe your story idea..."
+            placeholder="e.g., I want it to be about reconnecting with a childhood friend, and the object is a music box…"
             value={prompt}
             onChange={e => setPrompt(e.target.value)}
           />
           <div className="mt-6 flex justify-end">
-            <Btn onClick={handleGenerateLow} disabled={prompt.length < 5}>Generate Story →</Btn>
+            <Btn
+              onClick={() => isHigh ? setPhase('step1_problem') : handleGenerateLow()}
+              disabled={prompt.length < 10}
+            >
+              {isHigh ? 'Continue →' : 'Generate Story →'}
+            </Btn>
           </div>
         </Shell>
       );
 
-      // ── HIGH ENGAGEMENT TASK ────────────────────────────────────────────────────
-      if (phase === 'task_high') return (
-        <Shell step={1} total={3}>
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">Your Writing Task</h2>
-          <p className="text-sm text-gray-600 mb-6">Provide an initial idea. The AI will write a baseline draft and then ask for your creative direction.</p>
-          <textarea
-            rows={4}
-            className="w-full border border-gray-200 rounded-lg p-4 text-sm text-gray-800 resize-none outline-none focus:ring-1 focus:ring-gray-400 shadow-sm bg-white"
-            placeholder="Describe your story idea..."
-            value={prompt}
-            onChange={e => setPrompt(e.target.value)}
-          />
-          <div className="mt-6 flex justify-end">
-            <Btn onClick={handleGenerateHighBase} disabled={prompt.length < 5}>Generate Draft →</Btn>
-          </div>
-        </Shell>
-      );
+      // ════════════════════════════════════════════════════════════════════════
+      // HIGH ENGAGEMENT — STEP 1: PROBLEM IDENTIFICATION
+      // ════════════════════════════════════════════════════════════════════════
+      if (phase === 'step1_problem') return (
+        <Shell step={2} total={totalSteps}>
+          <h2 className="text-xl font-semibold text-gray-900 mb-1">Step 1: Define Your Story</h2>
+          <p className="text-sm text-gray-500 mb-6">Before the AI writes, let's frame what kind of story this should be.</p>
 
-      // ── HIGH ENGAGEMENT: CHOICES ────────────────────────────────────────────────
-      if (phase === 'engage_choice') return (
-        <Shell step={2} total={3}>
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">Co-Creation Step</h2>
-          <p className="text-sm text-gray-600 mb-4">Here is the baseline story the AI drafted:</p>
-          <div className="bg-white border border-gray-200 rounded-lg p-5 text-sm text-gray-800 mb-8 whitespace-pre-line shadow-sm">
-            {baselineStory}
-          </div>
-          
-          <p className="text-base font-medium text-gray-900 mb-4">How would you like to develop it? Select a direction:</p>
-          <div className="space-y-3 mb-8">
-            {options.map((opt, i) => (
-              <label key={i} className={`block border rounded-lg p-4 cursor-pointer transition-colors ${selectedOption === opt ? 'border-gray-800 bg-gray-100 shadow-inner' : 'border-gray-200 bg-white hover:border-gray-300 shadow-sm'}`}>
-                <div className="flex items-start gap-3">
-                  <input type="radio" name="direction" value={opt} checked={selectedOption === opt} onChange={() => setSelectedOption(opt)} className="mt-1" />
-                  <span className="text-sm text-gray-800 leading-snug">{opt}</span>
-                </div>
-              </label>
+          {/* Genre */}
+          <p className="text-sm font-medium text-gray-800 mb-3">What genre or tone fits your vision?</p>
+          <div className="grid grid-cols-2 gap-3 mb-8">
+            {GENRE_OPTIONS.map(g => (
+              <SelectableCard key={g} selected={genre === g} onClick={() => setGenre(g)}>
+                <span className="text-sm text-gray-800">{g}</span>
+              </SelectableCard>
             ))}
           </div>
-          
+
+          {/* Conflict */}
+          <p className="text-sm font-medium text-gray-800 mb-2">What is the central tension or conflict?</p>
+          <textarea
+            rows={2}
+            className="w-full border border-gray-200 rounded-lg p-3 text-sm text-gray-800 resize-none outline-none focus:ring-1 focus:ring-gray-400 bg-white mb-8"
+            placeholder="e.g., The protagonist must decide whether to confront a painful memory or let it go…"
+            value={conflict}
+            onChange={e => setConflict(e.target.value)}
+          />
+
+          {/* Emotional Arc */}
+          <p className="text-sm font-medium text-gray-800 mb-3">What emotional journey should the reader experience?</p>
+          <div className="space-y-3 mb-8">
+            {EMOTION_OPTIONS.map(em => (
+              <SelectableCard key={em.label} selected={emotionArc === em.label} onClick={() => setEmotionArc(em.label)}>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm font-medium text-gray-800">{em.label}</span>
+                  <span className="text-xs text-gray-400">{em.desc}</span>
+                </div>
+              </SelectableCard>
+            ))}
+          </div>
+
           <div className="flex justify-end">
-            <Btn onClick={handleGenerateHighFinal} disabled={!selectedOption}>Generate Final Story →</Btn>
+            <Btn onClick={handleGenerateElements} disabled={!genre || conflict.length < 5 || !emotionArc}>
+              Generate Story Elements →
+            </Btn>
           </div>
         </Shell>
       );
 
-      // ── LOADING ─────────────────────────────────────────────────────────────────
-      if (phase === 'loading') return (
-        <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-          <div className="text-center">
-            <div className="w-8 h-8 rounded-full border-2 border-gray-200 border-t-gray-800 animate-spin mx-auto mb-4" />
-            <p className="text-sm font-medium text-gray-600">{loadingMsg}</p>
+      // ════════════════════════════════════════════════════════════════════════
+      // HIGH ENGAGEMENT — STEP 2: INFORMATION SEARCHING
+      // ════════════════════════════════════════════════════════════════════════
+      if (phase === 'step2_search') return (
+        <Shell step={3} total={totalSteps}>
+          <h2 className="text-xl font-semibold text-gray-900 mb-1">Step 2: Choose Your Building Blocks</h2>
+          <p className="text-sm text-gray-500 mb-6">The AI generated options based on your vision. Evaluate each category and select the element you want.</p>
+
+          {/* Characters */}
+          <p className="text-sm font-medium text-gray-800 mb-3">🧑 Character</p>
+          <div className="space-y-2 mb-8">
+            {characters.map((c, i) => (
+              <SelectableCard key={i} selected={selCharacter === c} onClick={() => setSelCharacter(c)}>
+                <span className="text-sm text-gray-700">{c}</span>
+              </SelectableCard>
+            ))}
           </div>
-        </div>
+
+          {/* Settings */}
+          <p className="text-sm font-medium text-gray-800 mb-3">🌄 Setting & Atmosphere</p>
+          <div className="space-y-2 mb-8">
+            {settings.map((s, i) => (
+              <SelectableCard key={i} selected={selSetting === s} onClick={() => setSelSetting(s)}>
+                <span className="text-sm text-gray-700">{s}</span>
+              </SelectableCard>
+            ))}
+          </div>
+
+          {/* Plot Devices */}
+          <p className="text-sm font-medium text-gray-800 mb-3">🔀 Plot Device</p>
+          <div className="space-y-2 mb-8">
+            {plotDevices.map((p, i) => (
+              <SelectableCard key={i} selected={selPlotDevice === p} onClick={() => setSelPlotDevice(p)}>
+                <span className="text-sm text-gray-700">{p}</span>
+              </SelectableCard>
+            ))}
+          </div>
+
+          <div className="flex justify-end">
+            <Btn onClick={() => setPhase('step3_ideagen')} disabled={!selCharacter || !selSetting || !selPlotDevice}>
+              Continue to Final Step →
+            </Btn>
+          </div>
+        </Shell>
       );
 
-      // ── STORY DISPLAY ───────────────────────────────────────────────────────────
+      // ════════════════════════════════════════════════════════════════════════
+      // HIGH ENGAGEMENT — STEP 3: IDEA GENERATION
+      // ════════════════════════════════════════════════════════════════════════
+      if (phase === 'step3_ideagen') return (
+        <Shell step={4} total={totalSteps}>
+          <h2 className="text-xl font-semibold text-gray-900 mb-1">Step 3: Your Creative Vision</h2>
+          <p className="text-sm text-gray-500 mb-6">Review your choices below, then write how these elements should come together.</p>
+
+          <Card className="mb-6">
+            <div className="space-y-3 text-sm">
+              <div><span className="font-medium text-gray-500">Genre:</span> <span className="text-gray-800">{genre}</span></div>
+              <div><span className="font-medium text-gray-500">Conflict:</span> <span className="text-gray-800">{conflict}</span></div>
+              <div><span className="font-medium text-gray-500">Emotional Arc:</span> <span className="text-gray-800">{emotionArc}</span></div>
+              <hr className="border-gray-100" />
+              <div><span className="font-medium text-gray-500">Character:</span> <span className="text-gray-800">{selCharacter}</span></div>
+              <div><span className="font-medium text-gray-500">Setting:</span> <span className="text-gray-800">{selSetting}</span></div>
+              <div><span className="font-medium text-gray-500">Plot Device:</span> <span className="text-gray-800">{selPlotDevice}</span></div>
+            </div>
+          </Card>
+
+          <p className="text-sm font-medium text-gray-800 mb-2">How should these elements come together? What unique twist or ending do you envision?</p>
+          <textarea
+            rows={4}
+            className="w-full border border-gray-200 rounded-lg p-4 text-sm text-gray-800 resize-none outline-none focus:ring-1 focus:ring-gray-400 shadow-sm bg-white"
+            placeholder="e.g., I want the story to reveal that the stranger IS the protagonist's future self, and the object is a key to a door that hasn't been built yet…"
+            value={creativeDirection}
+            onChange={e => setCreativeDirection(e.target.value)}
+          />
+          <div className="mt-6 flex justify-end">
+            <Btn onClick={handleGenerateFinal} disabled={creativeDirection.length < 15}>Generate Final Story →</Btn>
+          </div>
+        </Shell>
+      );
+
+      // ════════════════════════════════════════════════════════════════════════
+      // LOADING
+      // ════════════════════════════════════════════════════════════════════════
+      if (phase === 'loading') return <LoadingScreen msg={loadingMsg} />;
+
+      // ════════════════════════════════════════════════════════════════════════
+      // STORY DISPLAY
+      // ════════════════════════════════════════════════════════════════════════
       if (phase === 'story') return (
-        <Shell step={cond.e === 'high' ? 3 : 2} total={cond.e === 'high' ? 3 : 2}>
+        <Shell step={totalSteps} total={totalSteps}>
           <div className="flex justify-between items-center mb-4">
-            <h2 className="text-xl font-semibold text-gray-900">Final Story Stimulus</h2>
-            <Btn outline onClick={() => { setPhase('welcome'); setPrompt(''); setBaselineStory(''); setOptions([]); setSelectedOption(null); setFinalStory(''); }}>Start Over</Btn>
+            <h2 className="text-xl font-semibold text-gray-900">Your Story</h2>
+            <Btn outline onClick={() => {
+              setPhase('welcome'); setPrompt(''); setFinalStory('');
+              setGenre(''); setConflict(''); setEmotionArc('');
+              setCharacters([]); setSettings([]); setPlotDevices([]);
+              setSelCharacter(''); setSelSetting(''); setSelPlotDevice('');
+              setCreativeDirection('');
+            }}>Start Over</Btn>
           </div>
           <div className="rounded-lg border border-gray-200 bg-white p-6 mb-6 shadow-sm">
             <p className="text-base text-gray-800 leading-relaxed whitespace-pre-line">{finalStory}</p>
           </div>
-          <div className="bg-white border border-gray-200 shadow-sm rounded-lg p-5 text-sm text-gray-600 space-y-2">
-            <p><strong>Condition:</strong> {cond.q === 'h' ? 'High' : 'Low'} Quality / {cond.e === 'high' ? 'High' : 'Low'} Engagement</p>
-            <p><strong>Prompt:</strong> {prompt}</p>
-            {cond.e === 'high' && <p><strong>Chosen Direction:</strong> {selectedOption}</p>}
-          </div>
+
+          {/* Researcher metadata — condition info */}
+          <Card>
+            <p className="text-xs text-gray-400 uppercase tracking-wide mb-3 font-medium">Experiment Metadata</p>
+            <div className="space-y-2 text-sm text-gray-600">
+              <p><strong>Condition:</strong> {cond.q === 'h' ? 'High' : 'Low'} Quality / {isHigh ? 'High' : 'Low'} Engagement</p>
+              <p><strong>Premise:</strong> {STORY_PREMISE}</p>
+              <p><strong>Elaboration:</strong> {prompt}</p>
+              {isHigh && (
+                <>
+                  <hr className="border-gray-100" />
+                  <p><strong>Genre:</strong> {genre}</p>
+                  <p><strong>Conflict:</strong> {conflict}</p>
+                  <p><strong>Emotional Arc:</strong> {emotionArc}</p>
+                  <p><strong>Character:</strong> {selCharacter}</p>
+                  <p><strong>Setting:</strong> {selSetting}</p>
+                  <p><strong>Plot Device:</strong> {selPlotDevice}</p>
+                  <p><strong>Creative Direction:</strong> {creativeDirection}</p>
+                </>
+              )}
+            </div>
+          </Card>
         </Shell>
       );
 
