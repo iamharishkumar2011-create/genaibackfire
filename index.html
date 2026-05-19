@@ -173,15 +173,15 @@
       // ── QUALITY PROMPTS ───────────────────────────────────────────────────────
       const getSystemPrompt = () => {
         if (cond.q === 'h') {
-          return `You are an award-winning literary fiction author. Your writing MUST demonstrate:
-- Rich metaphors and original figurative language (never use clichés)
-- Varied sentence structure: mix short punchy sentences with flowing complex ones
-- Vivid sensory details across all five senses
-- Show-don't-tell: reveal emotions through actions, body language, and environment
-- Subtext and layered meaning beneath the surface narrative
-- A distinctive, compelling narrative voice
-- Strong opening hooks and resonant endings
-Write prose that would be published in a top literary magazine.`;
+          return `You are a skilled, professional fiction writer. Your writing MUST demonstrate:
+- Clear, evocative language with occasional well-placed metaphors (avoid overloading with figurative language)
+- Varied but readable sentence structure: keep most sentences concise and punchy, with a few longer flowing ones for rhythm
+- Sensory details that ground the reader in the scene without overwhelming them
+- Show-don't-tell: reveal emotions through actions and body language rather than stating them directly
+- A warm, engaging narrative voice that draws readers in naturally
+- Strong opening hooks and satisfying endings
+- Vocabulary that is vivid but accessible — aim for a smart general audience, not literary academics
+Write prose that feels polished and professionally crafted, like a well-regarded short story collection — not experimental literary fiction.`;
         }
         return `You are a below-average writer with limited skill. Your writing MUST demonstrate:
 - Only literal, surface-level descriptions with no figurative language
